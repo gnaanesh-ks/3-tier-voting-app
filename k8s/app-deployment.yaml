@@ -1,0 +1,116 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-app
+  namespace: voting-app
+  labels:
+    app: voting-app
+    tier: frontend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: voting-app
+  template:
+    metadata:
+      labels:
+        app: voting-app
+        tier: frontend
+    spec:
+      serviceAccountName: voting-app-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: voting-app
+          # Replaced by CI/CD via GitOps overlay - see README "Image Tag Strategy"
+          image: 929170595649.dkr.ecr.us-east-1.amazonaws.com/voting-app
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: voting-app-config
+            - secretRef:
+                name: redis-credentials
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: aws-secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: aws-secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: voting-app-aws-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voting-app
+  namespace: voting-app
+  labels:
+    app: voting-app
+spec:
+  selector:
+    app: voting-app
+  ports:
+    - port: 80
+      targetPort: 8080
+  type: ClusterIP
+---
+# Expose externally via NGINX/AGIC ingress in production; ClusterIP + Ingress
+# keeps this portable across ingress controllers.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: voting-app-ingress
+  namespace: voting-app
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - vote.yourdomain.com
+      secretName: voting-app-tls
+  rules:
+    - host: vote.yourdomain.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: voting-app
+                port:
+                  number: 80

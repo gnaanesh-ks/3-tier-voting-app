@@ -1,0 +1,86 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: voting-app-project
+  namespace: argocd
+spec:
+  description: "Cricket vs Football voting application"
+  sourceRepos:
+    - "https://dev.azure.com/your-org/your-project/_git/voting-app-gitops"
+  destinations:
+    - namespace: voting-app
+      server: "https://kubernetes.default.svc"
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: voting-app
+  namespace: argocd
+  finalizers:
+    # ensures ArgoCD cleans up cluster resources if the Application CR is deleted
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: voting-app-project
+
+  source:
+    repoURL: "https://dev.azure.com/your-org/your-project/_git/voting-app-gitops"
+    targetRevision: main
+    path: overlays/prod          # Kustomize overlay - see README image-tag strategy
+    kustomize: {}
+
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: voting-app
+
+  syncPolicy:
+    automated:
+      prune: true          # remove resources deleted from Git
+      selfHeal: true        # revert manual/out-of-band cluster drift
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+
+  # Roll out staged: DB/Redis (stateful, sync-wave 0) before app/worker (sync-wave 1)
+  # is expressed via `argocd.argoproj.io/sync-wave` annotations on each manifest.
+
+  revisionHistoryLimit: 10
+---
+# Optional: a second Application for a "staging" overlay tracking a feature branch,
+# demonstrating environment promotion via separate overlays/branches.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: voting-app-staging
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: voting-app-project
+  source:
+    repoURL: "https://dev.azure.com/your-org/your-project/_git/voting-app-gitops"
+    targetRevision: main
+    path: overlays/staging
+    kustomize: {}
+  destination:
+    server: "https://kubernetes.default.svc"
+    namespace: voting-app-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

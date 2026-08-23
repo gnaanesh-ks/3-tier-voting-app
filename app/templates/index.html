@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cricket vs Football — Cast Your Vote</title>
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <main class="stage">
+    <div class="eyebrow"><span class="dot"></span> Live voting is open</div>
+    <h1>Cricket <span class="vs">vs</span> Football</h1>
+    <p class="subtitle">Pick a side. Every vote is queued instantly and tallied in the background.</p>
+
+    <div class="ballot" role="group" aria-label="Cast your vote">
+      <button class="choice choice--cricket" data-vote="cricket" type="button">
+        <span class="icon" aria-hidden="true">🏏</span>
+        <span class="label">Cricket</span>
+        <span class="hint">Vote for the pitch</span>
+        <span class="spinner" aria-hidden="true"></span>
+      </button>
+
+      <button class="choice choice--football" data-vote="football" type="button">
+        <span class="icon" aria-hidden="true">⚽</span>
+        <span class="label">Football</span>
+        <span class="hint">Vote for the field</span>
+        <span class="spinner" aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <div id="result" class="result" role="status" aria-live="polite"></div>
+
+    <section class="tally" aria-label="Live results">
+      <div class="tally-row" data-candidate="cricket">
+        <div class="tally-label"><span aria-hidden="true">🏏</span> Cricket</div>
+        <div class="tally-bar"><div class="tally-fill tally-fill--cricket" style="width:0%"></div></div>
+        <div class="tally-count">0 votes · 0%</div>
+      </div>
+      <div class="tally-row" data-candidate="football">
+        <div class="tally-label"><span aria-hidden="true">⚽</span> Football</div>
+        <div class="tally-bar"><div class="tally-fill tally-fill--football" style="width:0%"></div></div>
+        <div class="tally-count">0 votes · 0%</div>
+      </div>
+    </section>
+
+    <footer>served by <code>{{ hostname }}</code></footer>
+  </main>
+
+  <div class="confetti" id="confetti" aria-hidden="true"></div>
+
+  <script>
+    const buttons = document.querySelectorAll('.choice');
+    const resultEl = document.getElementById('result');
+    const confettiEl = document.getElementById('confetti');
+    const colors = ['#ff9f43', '#22c1c3', '#4ade80', '#f4f6fb'];
+
+    function showResult(message, kind) {
+      resultEl.textContent = message;
+      resultEl.className = `result show ${kind}`;
+    }
+
+    function burstConfetti() {
+      const count = 28;
+      for (let i = 0; i < count; i++) {
+        const piece = document.createElement('span');
+        piece.style.left = `${Math.random() * 100}%`;
+        piece.style.background = colors[i % colors.length];
+        piece.style.animationDuration = `${1.2 + Math.random() * 1.2}s`;
+        piece.style.animationDelay = `${Math.random() * 0.3}s`;
+        confettiEl.appendChild(piece);
+        piece.addEventListener('animationend', () => piece.remove());
+      }
+    }
+
+    async function castVote(choice, btn) {
+      buttons.forEach(b => b.disabled = true);
+      btn.classList.add('is-loading');
+
+      try {
+        const res = await fetch('/vote', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vote: choice }),
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          showResult(`Thanks! Your vote for ${data.vote} was recorded.`, 'success');
+          burstConfetti();
+          // the worker drains Redis asynchronously, so give it a beat before refreshing counts
+          setTimeout(fetchResults, 800);
+        } else {
+          showResult(data.error || 'Something went wrong.', 'error');
+        }
+      } catch (err) {
+        showResult('Network error — please try again.', 'error');
+      } finally {
+        btn.classList.remove('is-loading');
+        buttons.forEach(b => b.disabled = false);
+      }
+    }
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => castVote(btn.dataset.vote, btn));
+    });
+
+    async function fetchResults() {
+      try {
+        const res = await fetch('/results');
+        if (!res.ok) return;
+        const data = await res.json();
+        (data.results || []).forEach(r => {
+          const row = document.querySelector(`.tally-row[data-candidate="${r.candidate}"]`);
+          if (!row) return;
+          row.querySelector('.tally-fill').style.width = `${r.pct}%`;
+          row.querySelector('.tally-count').textContent = `${r.votes} votes · ${r.pct}%`;
+        });
+      } catch (err) {
+        // transient network hiccup - the next poll will catch up
+      }
+    }
+
+    fetchResults();
+    setInterval(fetchResults, 4000);
+  </script>
+</body>
+</html>

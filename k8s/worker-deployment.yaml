@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voting-worker
+  namespace: voting-app
+  labels:
+    app: voting-worker
+    tier: worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: voting-worker
+  template:
+    metadata:
+      labels:
+        app: voting-worker
+        tier: worker
+    spec:
+      serviceAccountName: voting-app-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        fsGroup: 1001
+      containers:
+        - name: voting-worker
+          # Replaced by CI/CD via GitOps overlay - see README "Image Tag Strategy"
+          image: 929170595649.dkr.ecr.us-east-1.amazonaws.com/voting-worker
+          envFrom:
+            - configMapRef:
+                name: voting-app-config
+            - secretRef:
+                name: redis-credentials
+            - secretRef:
+                name: postgres-credentials
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+          livenessProbe:
+            exec:
+              command: ["pgrep", "-f", "worker.py"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            exec:
+              command: ["pgrep", "-f", "worker.py"]
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          volumeMounts:
+            - name: aws-secrets-store
+              mountPath: /mnt/secrets-store
+              readOnly: true
+      volumes:
+        - name: aws-secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: voting-app-aws-secrets
+      terminationGracePeriodSeconds: 15
