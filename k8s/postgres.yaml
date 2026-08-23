@@ -81,7 +81,7 @@ spec:
         name: postgres-data
       spec:
         accessModes: ["ReadWriteOnce"]
-        storageClassName: io2   # AWS EBS CSI driver, provisioned IOPS for DB I/O
+        storageClassName: gp3   # AWS EBS CSI driver (io2 is not Free-Tier eligible on this account)
         resources:
           requests:
             storage: 10Gi

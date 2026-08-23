@@ -6,13 +6,17 @@ metadata:
 spec:
   description: "Cricket vs Football voting application"
   sourceRepos:
-    - "https://dev.azure.com/your-org/your-project/_git/voting-app-gitops"
+    - "https://github.com/gnaanesh-ks/3-tier-voting-app"
   destinations:
     - namespace: voting-app
+      server: "https://kubernetes.default.svc"
+    - namespace: voting-app-staging
       server: "https://kubernetes.default.svc"
   clusterResourceWhitelist:
     - group: ""
       kind: Namespace
+    - group: "storage.k8s.io"
+      kind: StorageClass
   namespaceResourceWhitelist:
     - group: "*"
       kind: "*"
@@ -29,10 +33,9 @@ spec:
   project: voting-app-project
 
   source:
-    repoURL: "https://dev.azure.com/your-org/your-project/_git/voting-app-gitops"
+    repoURL: "https://github.com/gnaanesh-ks/3-tier-voting-app"
     targetRevision: main
-    path: overlays/prod          # Kustomize overlay - see README image-tag strategy
-    kustomize: {}
+    path: k8s
 
   destination:
     server: "https://kubernetes.default.svc"
@@ -71,10 +74,9 @@ metadata:
 spec:
   project: voting-app-project
   source:
-    repoURL: "https://dev.azure.com/your-org/your-project/_git/voting-app-gitops"
+    repoURL: "https://github.com/gnaanesh-ks/3-tier-voting-app"
     targetRevision: main
-    path: overlays/staging
-    kustomize: {}
+    path: k8s
   destination:
     server: "https://kubernetes.default.svc"
     namespace: voting-app-staging
